@@ -4,10 +4,11 @@
 #include <string>
 #include <vector>
 #include <stdio.h>
-#include <windows.h>
+#include <exception>
 
 using namespace std;
 
+#define SEH 0
 #define DEBUG 0
 #define APPEND 0  //определяет поведение программы на шаге 3 (1 - из файла не удаляется первая строчка, 0 - удаляется)
 
@@ -31,19 +32,60 @@ ostream& operator << (ostream& s, const Point& p)
 	return s << p.name << ": " << p.x << " " << p.y << endl;
 }
 
+DWORD filter(_EXCEPTION_POINTERS* exception, fstream& stream, string& filename) {
+	if (exception->ExceptionRecord->ExceptionCode == 3765269347) {
+		ofstream{ filename };
+		stream.open(filename);
+
+		return EXCEPTION_CONTINUE_EXECUTION;
+	}
+	
+	return EXCEPTION_EXECUTE_HANDLER;
+}
+
+void open_a_file(fstream& stream, string& filename) {
+	stream.exceptions(ios::failbit);
+
+#if SEH
+	__try {
+		stream.open(filename);
+		stream << "В файл выведена информация" << endl;
+	}
+	__except (filter(GetExceptionInformation(), stream, filename)) {
+		stream << "В файл выведена информация" << endl;
+	}
+#else
+	try {
+		stream.open(filename);
+		stream << "В файл выведена информация" << endl;
+	}
+	catch (ios_base::failure) {
+		ofstream{ filename };
+		stream << "Файла не было в директории программы на момент запуска" << endl;
+	}
+#endif
+}
+
+void read_lines_from_file(vector<string>& vec, fstream& stream, string& temp) {
+	__try {
+		while (getline(stream, temp)) {
+			vec.push_back(temp);
+		}
+	}
+	__except (GetExceptionInformation()->ExceptionRecord->ExceptionCode == 3765269347 ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+
+	}
+}
+
 int main() {
+	system("chcp 1251 >> null");
+	string temp;
 
 	// ШАГ 1
-	setlocale(LC_ALL, "ru");
 
-	string filename = "file.txt";
-	fstream txtfile(filename);
-	if (!txtfile) {
-		ofstream{ filename };
-		txtfile.open(filename);
-	}
-	txtfile << "В файл выведена информация" << endl;
-
+	string filename = "file.txt"; fstream txtfile;
+	open_a_file(txtfile, filename);
+	
 	// thousands lines of code here...
 
 	if (txtfile)
@@ -52,9 +94,9 @@ int main() {
 	// ШАГ 2
 
 	txtfile.open(filename);
-	string line;
-	getline(txtfile, line);
-	cout << line << endl;
+	vector<string> line;
+	read_lines_from_file(line, txtfile, temp);
+	cout << line[0] << endl;
 	txtfile.close();
 
 	// ШАГ 3
@@ -98,12 +140,13 @@ int main() {
 	txtfile.open(filename);
 	txtfile.seekg(position_offset, ios::beg);
 
-	while (getline(txtfile, line)) {
-		values.push_back(line);
-		cout << line << endl;
-	}
+	read_lines_from_file(values, txtfile, temp);
 
 	txtfile.close();
+
+	for (int i = 0; i < values.size(); i++) {
+		cout << values[i] << endl;
+	}
 
 	// ШАГ 6
 
